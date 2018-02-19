@@ -3,18 +3,22 @@ const FthApp = require('./FthApp')
 const http = require('http')
 const url = require('url')
 const FthStaticFiles = require('./FthStaticFiles')
+const FthWebMiddleware = require('./FthWebMiddleware')
+const fs = require('fs')
+const path = require('path')
 
 class FlowCtrl {
-    constructor() {
+    constructor(id) {
         this.isFlowing = true
+        this.id = id
     }
 
-    letItFlow(caller, request, response, pipeline) {
+    async letItFlow(caller, request, response, pipeline) {
 
         if (!pipeline || !pipeline.length)
             return
         for (let i = 0; i < pipeline.length; i++) {
-            pipeline[i].apply(caller, [request, response, this]);
+            await pipeline[i].apply(caller, [request, response, this]);
             if (!this.isFlowing) {
                 return;
             }
@@ -41,6 +45,7 @@ class FthWebHost extends FthApp {
         this.server
         this.handlers = []
         this.middlewares = []
+        this._fthwebhost_basetypetoken = true;
     }
 
     _inputArguments() {
@@ -49,40 +54,47 @@ class FthWebHost extends FthApp {
         ]
     }
 
-    loadModulesIn(folder) {
+    loadModulesIn(folder, probeFn) {
         let retv = []
         fs.readdir(folder, (err, files) => {
-            if(err) return;
-            let fileFun = file => {
-                if(file.endsWith('.js')) {
-                    try {
-                        let nodeModule = require(file);
-                        if(typeof nodeModule === 'function') {
-                            //Ironic how I have to filter FthWebHost out, because it's technically also
-                            // a Fth App
-                            let probeInstance = new nodeModule();
-                            if(probe(nodeModule)) {
-                                if(probeInstance.noAutoLoad) {
-                                    return;
+            if(err) {
+                console.error(err);
+            }
+            files.forEach(
+                file => {
+                    let realFile = path.join(folder, file);
+                    if(!fs.existsSync(realFile))
+                        return
+                    if(realFile.endsWith('.js')) {
+                        try {
+                            let nodeModule = require(`./${realFile.replace('\\', '/')}`);
+                            if(typeof nodeModule === 'function') {
+                                //Ironic how I have to filter FthWebHost out, because it's technically also
+                                // a Fth App
+                                let probeInstance = new nodeModule();
+                                if(probeFn(probeInstance)) {
+                                    if(probeInstance.noAutoLoad) {
+                                        return;
+                                    }
+                                    let rx = probeInstance.regex || new RegExp('^\/' + file.substring(0, file.indexOf('.')))
+                                    retv.push({
+                                        methods: probeInstance.acceptMethods || ['GET', 'POST'],
+                                        app: nodeModule,
+                                        regex: rx
+                                    })
+                                    console.warn(`Added ${realFile} to handlers as ${rx}`)
                                 }
-                                retv.push({
-                                    methods: probeInstance.acceptMethods || ['GET', 'POST'],
-                                    app: nodeModule,
-                                    regex: probeInstance.regex || file.substring(0, file.indexOf('.'))
-                                })
-                                console.log(`Added ${nodeModule} to handlers`)
                             }
+                        } catch(err) {
+                            console.error(`Failed to load ${realFile}`, err)
                         }
-                    } catch(err) {
-
+                    }
+                    if(fs.statSync(realFile).isDirectory()) {
+                        let moar = this.loadModulesIn(file)
+                        retv.push(moar)
                     }
                 }
-                if(fs.statSync(file).isDirectory) {
-                    let moar = this.loadModulesIn(file)
-                    retv.push(moar)
-                }
-            }
-            files.forEach(fileFun);
+            );
         })
         return retv
     }
@@ -96,20 +108,22 @@ class FthWebHost extends FthApp {
     }
 
     autoImport(baseDir) {
-        let handlers = loadModulesIn(baseDir, 
-            (probeInstance) => probeInstance instanceof FthApp && 
-            !(probeInstance instanceof FthWebHost) &&
-            !(probeInstance instanceof FthWebMiddleware)
+        let handlers = this.loadModulesIn(baseDir, 
+            (a) => a._fthapp_basetypetoken &&
+            !a._fthwebmiddleware_basetypetoken &&
+            !a._fthwebhost_basetypetoken
         )
-        let middlewares = loadModulesIn(baseDir, 
-            (probeInstance) => probeInstance instanceof FthWebMiddleware
+        let middlewares = this.loadModulesIn(baseDir, 
+            (a) => a._fthwebmiddleware_basetypetoken
         )
+        this.setupHandlers(handlers)
+        this.setupMiddleWares(middlewares)
     }
     addStaticHandler(dir, types) {
         if(!types)
             types = 'js,css,jpg,jpeg,png,bmp,gif,tiff,ttf,xls,xlsx,pdf,woff,woff2'
         types = types.split(',')
-        middlewares.push({
+        this.middlewares.push({
             app: FthStaticFiles,
             args: [dir, [ types ]]
         })
@@ -168,14 +182,16 @@ class FthWebHost extends FthApp {
      * Otherwise, these Middlewares will be kept loaded and will run _handleError() or _flowOut according
      * to the outcome of the handle() phase.
      */
-    flowIn(request, response, flowCtrl) {
+    async flowIn(request, response, flowCtrl) {
         flowCtrl.middlewares = [];
         for (let i = 0; i < this.middlewares.length; i++) {
             let mw = new this.middlewares[i].app(this.middlewares[i].args);
             flowCtrl.middlewares.push(mw);
-            mw._flowIn(request, response, flowCtrl);
-            mw.input = request.body
+            mw.input = request
             mw.output = response
+            mw.request = request
+            mw.response = response
+            await mw._flowIn(request, response, flowCtrl);
             if (!flowCtrl.isFlowing)
                 response.end()
             return;
@@ -189,22 +205,23 @@ class FthWebHost extends FthApp {
      * executes it (or not)
      * If an error happens, it will run each middleware trying to resolve the error
      */
-    handle(request, response, flowCtrl) {
+    async handle(request, response, flowCtrl) {
         let matchedApp
         try {
+            let cut = (s) => s.indexOf('?') > -1 ? s.substring(0, s.indexOf('?')) : s
+            let importantPartOfUrl = cut(flowCtrl.requestedUrl);
             for (let i = 0; i < this.handlers.length; i++) {
                 let handler = this.handlers[i]
-                let requestUrl = request.url
                 let method = request.method
-                let cut = (s) => s.indexOf('?') > -1 ? s.substring(0, s.indexOf('?')) : s
-                let importantPartOfUrl = cut(requestUrl);
                 if(!handler || !handler.methods || !handler.regex || !handler.app ) {
                     continue;
                 }
-                if (handler.methods.find(i=> i.toLowerCase() == method) && importantPartOfUrl.match(new RegExp(route.regex))) {
-                    let args = url.parse(reqUrl, true)
+                let methodMatches = handler.methods.map(i=> i.toUpperCase()).indexOf(request.method.toUpperCase()) > -1;
+                let urlMatches = importantPartOfUrl.match(handler.regex)
+                if (methodMatches && urlMatches) {
+                    let args = url.parse(request.url, true)
                     matchedApp = new handler.app()
-                    FthApp.processRequest(matchedApp, args, request, response)
+                    await FthApp.processRequest(matchedApp, args, request, response)
                     flowCtrl.handled = true
                     return;
                 }
@@ -212,12 +229,13 @@ class FthWebHost extends FthApp {
         } catch (err) {
             // If an error occours in the process, middlewares are then called to handle
             // the error
+            console.trace(err);
             flowCtrl.interrupt()
             response.statusCode = 500
             for (let i = flowCtrl.middlewares.length; i >= 0; i--) {
                 let mw = flowCtrl.middlewares[i];
                 try {
-                    let couldThisBoyHandleIt = mw._handleError(err, matchedApp, flowCtrl);
+                    let couldThisBoyHandleIt = await mw._handleError(err, matchedApp, flowCtrl);
                     if (couldThisBoyHandleIt) {
                         // well then call it a go
                         response.end();
@@ -236,12 +254,12 @@ class FthWebHost extends FthApp {
         }
     }
 
-    flowOut(request, response, flowCtrl) {
+    async flowOut(request, response, flowCtrl) {
         // Third flow runs flow out of all middlewares back to front
         for (let i = flowCtrl.middlewares.length - 1; i >= 0; i--) {
             let mw = flowCtrl.middlewares[i];
             try {
-                mw._flowOut(request, response, flowCtrl);
+                await mw._flowOut(flowCtrl);
             } catch(err) {                    
                 console.error(`Middleware ${mw.app} has thrown an error during Flow-Out phase:`, err)
                 throw err
@@ -250,26 +268,43 @@ class FthWebHost extends FthApp {
     }
 
     start(usePort) {
-        this.server = http.createServer((request, response) => {
-            let reqUrl = request.url
-            let flowCtrl = new FlowCtrl()
-            //First flow takes middlewares and execute them
-            flowCtrl.letItFlow(this, request, response, [
-                this.flowIn,
-                this.handle,
-                this.flowOut
-            ])
-            if (!flowCtrl.handled) {
-                response.statusCode = 404;
-                response.end();
+        let reqId = 0;
+        this.server = http.createServer(async (request, response) => {
+            let t0 = new Date().getTime();
+            try {
+                if(!request)
+                    return;
+                let reqUrl = request.url
+                let flowCtrl = new FlowCtrl(++reqId)
+                flowCtrl.requestedUrl = reqUrl
+                //First flow takes middlewares and execute them
+                let req = request
+                let res = response
+                await flowCtrl.letItFlow(this, req, res, [
+                    this.flowIn,
+                    this.handle,
+                    this.flowOut
+                ])
+                if (!flowCtrl.handled) {
+                    response.statusCode = 404;
+                }
+                response.end()
+                let t1 = new Date().getTime()-t0;
+                this.printf(`[${flowCtrl.id}] ${request.method} ${flowCtrl.requestedUrl} | ${response.statusCode} | ${t1}ms`);
+            } catch(err) {
+                console.trace(err);
             }
         });
 
         this.server.listen(usePort, () => {
-            this.output.write(`Listening on port ${usePort}`)
+            this.output.write(`Listening on port ${usePort}\n`)
         });
     }
 
 }
+
+process.on('unhandledRejection', error => {
+    console.trace('unhandledRejection', error.message);
+});
 
 FthApp.register(module, FthWebHost)

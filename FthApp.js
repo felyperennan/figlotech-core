@@ -9,10 +9,11 @@ const https = require('https')
 class FthApp {
 
 	constructor(context) {
-        this.input
-        this.output
+        this.input = process.stdin
+        this.output = process.stdout
         this.isShellExec = false
         this.isHttpExec = false
+        this._fthapp_basetypetoken = true
     }
 
     get _inputArguments () { return [] }
@@ -79,13 +80,11 @@ class FthApp {
         throw "MAIN NOT IMPLEMENTED FOR THIS XTAPP"
     }
 
-    static processRequest(instance, args, request, response) {
-        setTimeout(()=> {
-            instance.isHttpExec = true
-            instance.input = request
-            instance.output = response
-            instance.main(args);
-        })
+    static async processRequest(instance, args, request, response) {
+        instance.isHttpExec = true
+        instance.input = request
+        instance.output = response
+        await instance._main(args);
     }
 
     static register(mod, app) {
@@ -93,7 +92,7 @@ class FthApp {
         if (require.main === mod) {
             let instance = new app()
             instance.isShellExec = true
-            let inputArgs = instance._inputArguments();
+            let inputArgs = instance._inputArguments;
             if(!inputArgs || !inputArgs.push) {
                 console.warn(`Warning: ${app} Implementation of _inputArguments was supposed to return a list of objects following the example: {long:'help', short:'?', help:'Displays this help text'} `)
             }
@@ -107,6 +106,7 @@ class FthApp {
             instance._main(fth.args)
         }
     }
+
 }
 
 module.exports = FthApp

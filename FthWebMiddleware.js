@@ -5,6 +5,7 @@ class FthWebMiddleware extends FthApp {
     constructor() {
         this.request
         this.response
+        this._fthwebmiddleware_basetypetoken = true
     }
 
     _flowIn(flowCtrl) {
