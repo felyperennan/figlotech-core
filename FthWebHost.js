@@ -62,12 +62,13 @@ class FthWebHost extends FthApp {
             }
             files.forEach(
                 file => {
-                    let realFile = path.join(folder, file);
+                    let baseDir = path.dirname(process.mainModule.filename);
+                    let realFile = path.join(baseDir, folder, file);
                     if(!fs.existsSync(realFile))
                         return
                     if(realFile.endsWith('.js')) {
                         try {
-                            let nodeModule = require(`./${realFile.replace('\\', '/')}`);
+                            let nodeModule = require(`${realFile.replace('\\', '/')}`);
                             if(typeof nodeModule === 'function') {
                                 //Ironic how I have to filter FthWebHost out, because it's technically also
                                 // a Fth App
@@ -82,11 +83,11 @@ class FthWebHost extends FthApp {
                                         app: nodeModule,
                                         regex: rx
                                     })
-                                    console.warn(`Added ${realFile} to handlers as ${rx}`)
+                                    console.warn(`Added ${realFile.substring(baseDir.length)} to handlers as ${rx}`)
                                 }
                             }
                         } catch(err) {
-                            console.error(`Failed to load ${realFile}`, err)
+                            console.error(`Failed to load ${realFile.substring(baseDir.length)}`, err)
                         }
                     }
                     if(fs.statSync(realFile).isDirectory()) {

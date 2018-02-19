@@ -1,6 +1,6 @@
 {
   "name": "figlotech-core",
-  "version": "1.0.3",
+  "version": "1.0.7",
   "description": "A simple framework for building unix-like applications based on small-but-powerful pure functionalities that will take an input and some args and return its outputs.",
   "main": "index.js",
   "scripts": {
