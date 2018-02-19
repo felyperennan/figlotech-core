@@ -122,11 +122,10 @@ class FthWebHost extends FthApp {
     }
     addStaticHandler(dir, types) {
         if(!types)
-            types = 'js,css,jpg,jpeg,png,bmp,gif,tiff,ttf,xls,xlsx,pdf,woff,woff2'
-        types = types.split(',')
+            types = 'html,htm,js,css,jpg,jpeg,png,bmp,gif,tiff,ttf,xls,xlsx,pdf,woff,woff2'.split(',')
         this.middlewares.push({
             app: FthStaticFiles,
-            args: [dir, [ types ]]
+            args: [dir, types]
         })
     }
 
@@ -192,7 +191,7 @@ class FthWebHost extends FthApp {
             mw.output = response
             mw.request = request
             mw.response = response
-            await mw._flowIn(request, response, flowCtrl);
+            await mw._flowIn(flowCtrl);
             if (!flowCtrl.isFlowing)
                 response.end()
             return;
@@ -291,7 +290,7 @@ class FthWebHost extends FthApp {
                 }
                 response.end()
                 let t1 = new Date().getTime()-t0;
-                this.printf(`[${flowCtrl.id}] ${request.method} ${flowCtrl.requestedUrl} | ${response.statusCode} | ${t1}ms`);
+                this.printf(`[${flowCtrl.id}] ${request.method} ${flowCtrl.requestedUrl} | ${response.statusCode} | ${t1}ms\n`);
             } catch(err) {
                 console.trace(err);
             }
