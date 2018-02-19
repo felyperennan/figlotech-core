@@ -1,12 +1,26 @@
 # figlotech-core
-A simple framework for building micro-apps that serve both as command line tools and web route handlers at the same time sharing the exact same code.
+A simple framework for building micro-apps that serve both as command line tools and as web handlers at the same time, using the exact same code
 
 This is a simple framework based (but not entirely) on the Unix philosophy.
 The framework consists on writing implementations of FthApp.
 An FthApp is the concept of a very basic simple application that is able to do its deeds with an argument array, an input stream and an output stream
 With this skeleton, the same FthApp can be executed both on the command line directly or as a route handler within a WebHost and it should work perfectly fine on both scenarios
-Ex:
+
+# To run the WebHost
+```js
+const fi = require('figlotech-core').FthWebHost
+
+let server = new FthWebHost()
+server.autoImport('./app')
+server.addStaticHandler('./public')
+
+server.start(3000)
+// autoImport will load all FthApps recursively on the given folder and use as handlers or middlewares
+// addStaticHandler adds built-in static files middleware and serves given folder as static
 ```
+
+# To write a basic FthApp
+```js
 const fi = require('figlotech-core')
 const FthApp = fi.FthApp
 
@@ -19,11 +33,9 @@ class MyBasicApp extends FthApp {
       this.output.write(`Hi ${args['name']}, how's it going?`)
     }
 }
-// Notice this FthApp.register here
 FthApp.register(module, MyBasicApp)
-// this function exports this class for require()
-// But it also makes this module executable, so that if called with node from the command line
-// the _main method will execute, stdin will be used as this.input and stdout as this.output
+// this function both exports this class for require()
+// and executes this app if its called directly
 ```
 If you call it directly with 
 ```node ./MyBasicApp.js --name figloalds``` 
@@ -34,34 +46,18 @@ If you call it from a webhost with
 ```path.to:3000/MyBasicApp?name=figloalds``` this will output the same
 "Hi Figloalds, how's it going?"
 
-This second option will require implementing the FthWebHost as follows:
-```
-const fi = require('figlotech-core')
-const FthWebHost = fit.FthWebHost
-
-const server = new FthWebHost()
-server.autoLoadModules(pathToModules)
-// This will cause the server to recursively load modules in that folder
-//   - by default all modules will respond to GET and POST
-//     - To overwrite this, set this.allowMethods in the module class constructor
-//   - by default modules will respond to their relative path as their regex
-//     - overwrite this by setting this.regex in the class constructor
-//   - This will load both modules and Middlewares, 
-//   - FTH doesn't care about your scaffolding strategy
-server.start(3000)
-```
-
-#The Anatomy of an FthApp
-And FthApp represents a simple executable "thing" that doesn't care about the rest of the application, all it cares are it's arguments, it's input stream and it's output stream
+# The In-depth Anatomy of an FthApp
+An FthApp represents a simple executable "thing" that doesn't care about the rest of the application, all it cares are it's arguments, it's input stream and it's output stream
 And the FthApp doesn't even care where these arguments, inputStream and outputStream  are coming from, it just does what it does.
-** WIP: Dependency Injection ** 
-```
+Dependency Injection is a Work-in-Progress 
+```js
 const FthApp = require('figlotech-core').FthApp
 
 class CsvToJson extends FthApp {
 
     constructor() {
         super()
+        this.acceptMethods = ['POST']
     }
     
     get doc() {
