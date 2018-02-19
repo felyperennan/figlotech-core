@@ -18,31 +18,6 @@ class MyBasicApp extends FthApp {
     _main(args) {
       this.output.write(`Hi ${args['name']}, how's it going?`)
     }
-
-    /*
-      FthApp 101: 
-        this.input | An input stream
-        this.output | An output stream
-        args (in main) | An object containing the arguments you received.
-        get _inputArguments | (getter in class) Allows you to specify simple console input arguments, like so:
-          Eg:
-            get _inputArguments() {
-              return [
-                { long: 'name', short: 'n', help: 'The name to be gret' } // passing --name Figloalds or -n Figloalds will feed args['name']
-              ]
-            }
-            
-        Utils from base class:
-        sendFile(fileName) | Write the contents of a file to this.output
-        async tunnelTo(url) | Pipes a HTTP-GET request to this.output
-        async get(url) | Just suggar syntax for http get request, retv is a stream
-        async post(url, data) | More suggar syntax, don't mind it
-        async readInputToString() | Reads this.input and writes it to a string. Retv is said string
-        async readInputToObject() | Same as the previous one but wrapped in a JSON.parse. retv is an object. Or a bigass error 
-        
-        That's it. this is no Express no big FW, just fun nodely stuff.
-    */
-
 }
 // Notice this FthApp.register here
 FthApp.register(module, MyBasicApp)
@@ -62,7 +37,7 @@ If you call it from a webhost with
 This second option will require implementing the FthWebHost as follows:
 ```
 const fi = require('figlotech-core')
-const FthWebHost = gneat.FthWebHost
+const FthWebHost = fit.FthWebHost
 
 const server = new FthWebHost()
 server.autoLoadModules(pathToModules)
@@ -76,15 +51,94 @@ server.autoLoadModules(pathToModules)
 server.start(3000)
 ```
 
-
-#The FthApp basics
+#The Anatomy of an FthApp
 And FthApp represents a simple executable "thing" that doesn't care about the rest of the application, all it cares are it's arguments, it's input stream and it's output stream
 And the FthApp doesn't even care where these arguments, inputStream and outputStream  are coming from, it just does what it does.
+** WIP: Dependency Injection ** 
+```
+const FthApp = require('figlotech-core').FthApp
 
-The ```FthApp.register()``` method will both export your app as a valid node module, but also make an environment for your application to 
-run directly on console, should it be called directly.
-By being a FthApp, this exact code can be used to respond to HTTP requests using the FthWebHost
-And that's where this is fun
+class CsvToJson extends FthApp {
+
+    constructor() {
+        super()
+    }
+    
+    get doc() {
+        return 'Converts a CSV file input to JSON using the first line as headers'
+    }
+
+    get _inputArguments() {
+        return [
+            { long: 'separator', short: 's', help: 'Character separator' }
+        ]
+    }
+
+    _main(args) {
+        let inputText = this.readInputToString()
+        let brokenInput = inputText.split('\n')
+        if(brokenInput && brokenInput.length) {
+            let separator
+            let startIndex = 0
+            if(brokenInput[0].startsWith('sep=')) {
+                separator = brokenInput[0].substring(4,1)
+                startIndex = 1
+            } else {
+                separator = args['separator'] || ','
+            }
+            // could make argument mandatory with
+            // this.requireArgs(['separator'])
+            let headers = brokenInput[startIndex].split(separator)
+            this.output.write('[')
+            for(let i = startIndex+1; i < brokenInput.length; i++) {
+                let vals = brokenInput[i].split(separator)
+                let obj = {}
+                for(let j = 0; j < headers.length; j++) {
+                    obj[headers[j]] = vals[j]
+                }
+                this.output.write(JSON.stringify(obj))
+                this.output.write(i < brokenInput.length-1 ? ',' : '')
+            }
+            this.output.write(']')
+            this.output.end()
+        }
+    }
+}
+
+FthApp.register(module, CsvToJson)
+
+/**
+USAGES
+    - POST http://somewhere.to/subfolder/CsvToJson?separator=,
+    - cat file.csv | node CsvToJson > file.json
+    - node CsvToJson -f file.csv -o file.json 
+NOTE
+    When called via command line, the -f and -o options are automatically added to redirect iostreams to filestreams
+
+  FthApp 101: 
+    this.input | An input stream
+    this.output | An output stream
+    args (in main) | An object containing the arguments you received.
+    get _inputArguments | (getter in class) Allows you to specify simple console input arguments, like so:
+    Eg:
+    get _inputArguments() {
+        return [
+            { long: 'name', short: 'n', help: 'The name to be gret' } 
+            // Passing --name Figloalds or -n Figloalds will feed args['name']
+            // The http-get variable name will also be fed into args['name']
+        ]
+    }
+    
+    Utils from base class:
+    sendFile(fileName) | Write the contents of a file to this.output
+    async tunnelTo(url) | Pipes a HTTP-GET request to this.output
+    async get(url) | Just suggar syntax for http get request, retv is a stream
+    async post(url, data) | More suggar syntax, don't mind it
+    async readInputToString() | Reads this.input and writes it to a string. Retv is said string
+    async readInputToObject() | Same as the previous one but wrapped in a JSON.parse. retv is an object. Or a bigass error 
+    
+*/
+```
 
 # How can FthApp be executed
 1 - By directly executing its javascript file. Eg ```node ./MyBasicApp.js```
@@ -99,5 +153,4 @@ And that's where this is fun
     - The output stream will be set to the Response
     
 # in conclusion
-gneat-ext is a simple framework for building mixed micro-services that can serve as excellent command line tools and http handlers at the same time,
-changing not a single line of code.
+figlotech-core is a simple framework for building mixed micro-services that can serve as excellent command line tools and http handlers at the same time, changing not a single line of code.

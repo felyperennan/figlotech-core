@@ -30,6 +30,16 @@ class FthApp {
         })
     }
 
+    printf(stuff) {
+        this.output.write(new Buffer(stuff))
+    }
+
+    async requireArgs(list) {
+        if(!fth.requireArgs(list)) {
+            process.abort()
+        }
+    }
+
     async readInputToObject() {
         return JSON.parse(await this.readInputToString());
     }
