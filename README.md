@@ -8,7 +8,8 @@ With this skeleton, the same FthApp can be executed both on the command line dir
 
 # To run the WebHost
 ```js
-const fi = require('figlotech-core').FthWebHost
+const fi = require('figlotech-core')
+const FthWebHost = fi.FthWebHost
 
 let server = new FthWebHost()
 server.autoImport('./app')
