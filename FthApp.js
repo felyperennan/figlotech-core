@@ -24,8 +24,7 @@ class FthApp {
     }
 
     get baseDir() {
-        return path.dirname(pr
-ocess.mainModule.filename);
+        return path.dirname(process.mainModule.filename);
     }
 
     async readInputToString() {
