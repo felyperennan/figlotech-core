@@ -31,7 +31,7 @@ class MyBasicApp extends FthApp {
     }
     
     _main(args) {
-      this.output.write(`Hi ${args['name']}, how's it going?`)
+        this.output.write(`Hi ${args['name']}, how's it going?`)
     }
 }
 FthApp.register(module, MyBasicApp)
