@@ -18,6 +18,10 @@ class FthApp {
 
     get _inputArguments () { return [] }
 
+    get doc() {
+        return ''
+    }
+
     async readInputToString() {
         return await new Promise((resolve, reject) => {
             let chunks = []
@@ -97,10 +101,16 @@ class FthApp {
                 console.warn(`Warning: ${app} Implementation of _inputArguments was supposed to return a list of objects following the example: {long:'help', short:'?', help:'Displays this help text'} `)
             }
             inputArgs.push([
+                { long: 'help', short: '?', help: '[FthApp] Displays Help' },
                 { long: 'file-input', short: 'in', help: '[FthApp] Uses file for input instead of stdin' },
                 { long: 'file-output', short: 'out', help: '[FthApp] Uses file for output instead of stdout' },
             ])
             fth.parseClArgs(inputArgs);
+            fth.setDescription(instance.doc)
+            if(fth.args['help']) {
+                fth.showHelp()
+                return;
+            }
             instance.input = fth.args['file-input'] ? fs.createReadStream(fth.args['file-input']) : process.stdin
             instance.output = fth.args['file-output'] ? fs.createReadStream(fth.args['file-output']) : process.stdout
             instance._main(fth.args)
