@@ -587,7 +587,8 @@ class FthStaticFiles extends FthApp {
     }
 
     async _flowIn(flowCtrl) {
-        let filePath = path.join(this.folder, this.request.url);
+	let cwd = this.baseDir
+        let filePath = path.join(cwd, this.folder, this.request.url);
         let ext = this.getExtOf(filePath);
         if(await fs.exists(filePath) && this.allowExtensions.indexOf(ext) > -1) {
             console.warn(`[StaticFiles] Sending ${filePath}`)

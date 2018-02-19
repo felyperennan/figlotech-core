@@ -5,6 +5,7 @@ const stream = require('stream')
 const url = require('url')
 const http = require('http')
 const https = require('https')
+const path = require('path')
 
 class FthApp {
 
@@ -20,6 +21,11 @@ class FthApp {
 
     get doc() {
         return ''
+    }
+
+    get baseDir() {
+        return path.dirname(pr
+ocess.mainModule.filename);
     }
 
     async readInputToString() {

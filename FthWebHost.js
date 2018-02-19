@@ -62,7 +62,7 @@ class FthWebHost extends FthApp {
             }
             files.forEach(
                 file => {
-                    let baseDir = path.dirname(process.mainModule.filename);
+                    let baseDir = this.baseDir
                     let realFile = path.join(baseDir, folder, file);
                     if(!fs.existsSync(realFile))
                         return
