@@ -191,6 +191,7 @@ class FthWebHost extends FthApp {
      */
     async flowIn(request, response, flowCtrl) {
         flowCtrl.middlewares = [];
+        flowCtrl.flowTrace({ stage: 'flow-in', event: 'enter-stage' })
         for (let i = 0; i < this.middlewares.length; i++) {
             let mw = new this.middlewares[i].app(this.middlewares[i].args);
             flowCtrl.middlewares.push(mw);
@@ -198,12 +199,15 @@ class FthWebHost extends FthApp {
             mw.output = response
             mw.request = request
             mw.response = response
-            await mw._flowIn(flowCtrl);
+            flowCtrl.flowTrace({ stage: 'flow-in', middleware: mw, event: 'enter-middleware' })
+            await mw._flowIn(flowCtrl);            
+            flowCtrl.flowTrace({ stage: 'flow-in', middleware: mw, event: 'exit-middleware' })
             if (!flowCtrl.isFlowing) {
                 flowCtrl.handled = true
                 return
             }
         }
+        flowCtrl.flowTrace({ stage: 'flow-in', event: 'exit-stage' })
     }
 
     /**
@@ -215,47 +219,57 @@ class FthWebHost extends FthApp {
      */
     async handle(request, response, flowCtrl) {
         let matchedApp
+        flowCtrl.flowTrace({ stage: 'main', event: 'enter-stage' })
         try {
             for (let i = 0; i < this.handlers.length; i++) {
                 let handler = this.handlers[i]
                 let method = request.method
-                if(!handler || !handler.methods || !handler.regex || !handler.app ) {
+                if(!handler || !handler.methods || !handler.regex || !handler.app ) {        
+                    flowCtrl.flowTrace({ stage: 'main', handlerName: handler.app._nodeModuleName(), event: 'skip-handler' })
                     continue;
                 }
                 let methodMatches = handler.methods.map(i=> i.toUpperCase()).indexOf(request.method.toUpperCase()) > -1;
                 let urlMatches = flowCtrl.relevantUrl.match(handler.regex)
                 if (methodMatches && urlMatches) {
                     let args = url.parse(request.url, true)
-                    matchedApp = new handler.app()
+                    matchedApp = new handler.app()                    
+                    flowCtrl.flowTrace({ stage: 'main', event: 'enter-handler', handler: matchedApp })
                     await FthApp.processRequest(matchedApp, args, request, response)
+                    flowCtrl.flowTrace({ stage: 'main', event: 'exit-handler', handler: matchedApp })
                     flowCtrl.handled = true
+                    flowCtrl.flowTrace({ stage: 'main', event: 'exit-stage' })
                     return;
                 }
             }
             // if code reaches this point then no handlers could handle this request.
             // We step in and make a 404 response, so that this flow can complete OK with no pain
             // and no nightmares too
-
+            flowCtrl.flowTrace({ stage: 'main', event: 'no-handler' })
             response.writeHead(404, { 
                 'Content-Length': 0,
                 'Cache-Control': `max-age=${1 * 60 * 60 * 24 * 7 }`
                 // That's 7 days
                 // This will be changed in the future.
             });
-            await FthApp.awful(response.end)
+            await FthApp.awful(response.end)            
+            flowCtrl.flowTrace({ stage: 'main', event: 'exit-stage' })
         } catch (err) {
             // If an error occours in the process, middlewares are then called to handle
             // the error
+            flowCtrl.flowTrace({ stage: 'main', event: 'throw-error' })
             console.trace(err);
             flowCtrl.interrupt()
             response.statusCode = 500
             for (let i = flowCtrl.middlewares.length; i >= 0; i--) {
                 let mw = flowCtrl.middlewares[i];
                 try {
+                    flowCtrl.flowTrace({ stage: 'main', middleware: mw, event: 'try-error-handling' })
                     let couldThisBoyHandleIt = await mw._handleError(err, matchedApp, flowCtrl);
+                    flowCtrl.flowTrace({ stage: 'main', middleware: mw, event: 'error-handler-exit' })
                     if (couldThisBoyHandleIt) {
                         // well then call it a go
-                        response.end();
+                        await promisify(response.end);
+                        flowCtrl.flowTrace({ stage: 'main', middleware: mw, event: 'error-handled' })
                         return;
                     }
                 } catch(err) {
@@ -267,21 +281,37 @@ class FthWebHost extends FthApp {
 
             // If no one could handle this shit then we're sorry but to tell the user
             // That ERROR 500: Shit happens
+            response.writeHead(500, { 
+                'Content-Length': 0,
+                'Cache-Control': `max-age=${1 * 60 * 60 * 24 * 7 }`
+                // That's 7 days
+                // This will be changed in the future.
+            });
+            flowCtrl.handled = true
             await FthApp.awful(response.end)
+            flowCtrl.flowTrace({ stage: 'main', event: 'critical-exit' })
         }
     }
 
-    async flowOut(request, response, flowCtrl) {
+    async flowOut(request, response, flowCtrl) {            
+        flowCtrl.flowTrace({ stage: 'flow-out', event: 'enter-stage' })
         // Third flow runs flow out of all middlewares back to front
         for (let i = flowCtrl.middlewares.length - 1; i >= 0; i--) {
             let mw = flowCtrl.middlewares[i];
             try {
+                flowCtrl.flowTrace({ stage: 'flow-out', middleware: mw, event: 'enter-middleware' })
                 await mw._flowOut(flowCtrl);
+                flowCtrl.flowTrace({ stage: 'flow-out', middleware: mw, event: 'exit-middleware' })
             } catch(err) {                    
                 console.error(`Middleware ${mw.app} has thrown an error during Flow-Out phase:`, err)
                 throw err
             }
         }
+        flowCtrl.flowTrace({ stage: 'flow-out', event: 'exit-stage' })
+    }
+
+    _onFlowTrace(i, flowCtrl) {
+
     }
 
     start(usePort) {
@@ -295,6 +325,7 @@ class FthWebHost extends FthApp {
                 let cut = (s) => s.indexOf('?') > -1 ? s.substring(0, s.indexOf('?')) : s
                 flowCtrl.relativeUrl = request.url
                 flowCtrl.relevantUrl = cut(flowCtrl.relativeUrl);
+                flowCtrl.flowTrace = (i) => { this._onFlowTrace(i, flowCtrl) }
                 //First flow takes middlewares and execute them
                 let req = request
                 let res = response

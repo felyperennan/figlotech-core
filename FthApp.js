@@ -66,11 +66,11 @@ class FthApp {
 
     async sendFile(path) {
         return await new Promise((resolve, reject)=> {
-            let fout = fs.createReadStream(path)
-            fout.pipe(this.output)
-            fout.on('finish', ()=> {
-                resolve()
-            })
+            let fin = fs.createReadStream(path)
+            fin.pipe(this.output)
+                .on('finish', ()=> {
+                    resolve()
+                })
         });
     }
     
