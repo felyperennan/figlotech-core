@@ -1,11 +1,12 @@
-
 const FthApp = require('./FthApp')
 const http = require('http')
 const url = require('url')
 const FthStaticFiles = require('./FthStaticFiles')
 const FthWebMiddleware = require('./FthWebMiddleware')
+const FthNgAppMiddleware = require('./FthNgAppMiddleware')
 const fs = require('fs')
 const path = require('path')
+
 
 class FlowCtrl {
     constructor(id) {
@@ -128,6 +129,12 @@ class FthWebHost extends FthApp {
             args: [dir, types]
         })
     }
+    addNgApp(dir, baseUrl) {
+        this.middlewares.push({
+            app: FthNgAppMiddleware,
+            args: [dir, baseUrl]
+        })
+    }
 
     _main(args) {
         autoLoadModules('./')
@@ -192,9 +199,10 @@ class FthWebHost extends FthApp {
             mw.request = request
             mw.response = response
             await mw._flowIn(flowCtrl);
-            if (!flowCtrl.isFlowing)
-                response.end()
-            return;
+            if (!flowCtrl.isFlowing) {
+                flowCtrl.handled = true
+                return
+            }
         }
     }
 
@@ -208,8 +216,6 @@ class FthWebHost extends FthApp {
     async handle(request, response, flowCtrl) {
         let matchedApp
         try {
-            let cut = (s) => s.indexOf('?') > -1 ? s.substring(0, s.indexOf('?')) : s
-            let importantPartOfUrl = cut(flowCtrl.requestedUrl);
             for (let i = 0; i < this.handlers.length; i++) {
                 let handler = this.handlers[i]
                 let method = request.method
@@ -217,7 +223,7 @@ class FthWebHost extends FthApp {
                     continue;
                 }
                 let methodMatches = handler.methods.map(i=> i.toUpperCase()).indexOf(request.method.toUpperCase()) > -1;
-                let urlMatches = importantPartOfUrl.match(handler.regex)
+                let urlMatches = flowCtrl.relevantUrl.match(handler.regex)
                 if (methodMatches && urlMatches) {
                     let args = url.parse(request.url, true)
                     matchedApp = new handler.app()
@@ -226,6 +232,17 @@ class FthWebHost extends FthApp {
                     return;
                 }
             }
+            // if code reaches this point then no handlers could handle this request.
+            // We step in and make a 404 response, so that this flow can complete OK with no pain
+            // and no nightmares too
+
+            response.writeHead(404, { 
+                'Content-Length': 0,
+                'Cache-Control': `max-age=${1 * 60 * 60 * 24 * 7 }`
+                // That's 7 days
+                // This will be changed in the future.
+            });
+            await FthApp.awful(response.end)
         } catch (err) {
             // If an error occours in the process, middlewares are then called to handle
             // the error
@@ -250,7 +267,7 @@ class FthWebHost extends FthApp {
 
             // If no one could handle this shit then we're sorry but to tell the user
             // That ERROR 500: Shit happens
-            response.end()
+            await FthApp.awful(response.end)
         }
     }
 
@@ -274,9 +291,10 @@ class FthWebHost extends FthApp {
             try {
                 if(!request)
                     return;
-                let reqUrl = request.url
                 let flowCtrl = new FlowCtrl(++reqId)
-                flowCtrl.requestedUrl = reqUrl
+                let cut = (s) => s.indexOf('?') > -1 ? s.substring(0, s.indexOf('?')) : s
+                flowCtrl.relativeUrl = request.url
+                flowCtrl.relevantUrl = cut(flowCtrl.relativeUrl);
                 //First flow takes middlewares and execute them
                 let req = request
                 let res = response
@@ -285,12 +303,11 @@ class FthWebHost extends FthApp {
                     this.handle,
                     this.flowOut
                 ])
-                if (!flowCtrl.handled) {
-                    response.statusCode = 404;
+                if(flowCtrl.isFlowing || !flowCtrl.handled) {
+                    console.error(`Request has overflown...`)
                 }
-                response.end()
                 let t1 = new Date().getTime()-t0;
-                this.printf(`[${flowCtrl.id}] ${request.method} ${flowCtrl.requestedUrl} | ${response.statusCode} | ${t1}ms\n`);
+                this.printf(`[${flowCtrl.id}] ${request.method} ${flowCtrl.relativeUrl} | ${response.statusCode} | ${t1}ms\n`);
             } catch(err) {
                 console.trace(err);
             }
@@ -298,6 +315,8 @@ class FthWebHost extends FthApp {
 
         this.server.listen(usePort, () => {
             this.output.write(`Listening on port ${usePort}\n`)
+            this.output.write(`Using Handlers: [${this.handlers.map(b=>b.app._nodeModuleName()).join(',')}]\n`)
+            this.output.write(`Using Middleware: [${this.middlewares.map(b=>b.app._nodeModuleName()).join(',')}]\n`)
         });
     }
 

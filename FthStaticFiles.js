@@ -17,30 +17,31 @@ class FthStaticFiles extends FthApp {
 
     getExtOf(file) {
         if(file.indexOf('.') > -1) {
-            return file.substring(file.indexOf('.') + 1).toLowerCase()
+            return file.substring(file.lastIndexOf('.') + 1).toLowerCase()
         } else {
             return ''
         }
     }
 
     extensionMatches(ext) {
-        return this.allowExtensions.map(i=> i.toLowerCase()).indexOf(ext.toLowerCase()) > -1
+        return this.allowExtensions.map(i=> i.toLowerCase()).lastIndexOf(ext.toLowerCase()) > -1
     }
 
     async _flowIn(flowCtrl) {
 	    let cwd = this.baseDir
-        let filePath = path.join(cwd, this.folder, this.request.url);
+        let filePath = path.join(cwd, this.folder, flowCtrl.relevantUrl);
         let ext = this.getExtOf(filePath);
         if(fs.existsSync(filePath)) {
             if(this.extensionMatches(ext)) {
-                console.warn(`[StaticFiles] Sending ${filePath}`)
                 flowCtrl.interrupt()
                 this.response.writeHead(200, { 
                     'Content-Type': _mimeMap[ext]||'application/octet-stream',
-                    'Content-Length': await fs.statSync(filePath).size
+                    'Content-Length': sz,
+                    'Cache-Control': `max-age=${1 * 60 * 60 * 24 * 7 }`
+                    // That's 7 days
+                    // This will be changed in the future.
                 });
-                console.warn(`[Static files] Serving  ${filePath.substring(cwd.length)} statically`)
-                this.sendFile(filePath)
+                await this.sendFile(filePath)
             }
         }
     }

@@ -15,6 +15,7 @@ class FthApp {
         this.isShellExec = false
         this.isHttpExec = false
         this._fthapp_basetypetoken = true
+        this._module
     }
 
     get _inputArguments () { return [] }
@@ -40,6 +41,15 @@ class FthApp {
         })
     }
 
+    static async awful(fn) {
+        return await new Promise(
+            (rs,rj)=>
+                fn(function(e) {
+                    rs(e)
+                })
+            );
+    } 
+
     printf(stuff) {
         this.output.write(new Buffer(stuff))
     }
@@ -54,9 +64,14 @@ class FthApp {
         return JSON.parse(await this.readInputToString());
     }
 
-    sendFile(path) {
-        let fout = fs.createReadStream(path)
-        fout.pipe(this.output)
+    async sendFile(path) {
+        return await new Promise((resolve, reject)=> {
+            let fout = fs.createReadStream(path)
+            fout.pipe(this.output)
+            fout.on('finish', ()=> {
+                resolve()
+            })
+        });
     }
     
     async get(url) {
@@ -96,8 +111,16 @@ class FthApp {
         await instance._main(args);
     }
 
+    static _module() { }
+
     static register(mod, app) {
         mod.exports = app
+        app._module = ()=> mod
+        app._nodeModuleName = () => { 
+            let a = mod.id
+            a = a.match(/([^\/\\]*).js/g).pop().replace(".js", '')
+            return a;
+        }
         if (require.main === mod) {
             let instance = new app()
             instance.isShellExec = true
